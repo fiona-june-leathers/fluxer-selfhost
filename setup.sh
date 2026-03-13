@@ -50,6 +50,13 @@ JS
 prompt() {
   # Usage: prompt VAR_NAME "Question" "default_value"
   local varname="$1" question="$2" default="${3:-}"
+  
+  # If the variable is already set in the environment, use it and skip prompt
+  if [[ -n "${!varname:-}" ]]; then
+    info "Using ${varname} from environment: ${!varname}"
+    return 0
+  fi
+
   if [[ -n "$default" ]]; then
     echo -en "${CYAN}?${RESET} ${question} [${default}]: "
   else
@@ -64,14 +71,30 @@ prompt() {
 }
 
 prompt_yn() {
-  # Usage: prompt_yn "Question" default  (default: y or n)
+  # Usage: prompt_yn VAR_NAME "Question" default (default: y or n)
   # Returns 0 for yes, 1 for no
-  local question="$1" default="${2:-y}"
+  local varname="$1" question="$2" default="${3:-y}"
+
+  # If the variable is already set in the environment, use it and skip prompt
+  if [[ -n "${!varname:-}" ]]; then
+    info "Using ${varname} from environment: ${!varname}"
+    [[ "${!varname}" =~ ^[Yy] ]]
+    return $?
+  fi
+
   local hint; [[ "$default" == "y" ]] && hint="Y/n" || hint="y/N"
   echo -en "${CYAN}?${RESET} ${question} [${hint}]: "
   read -r ans
   [[ -z "$ans" ]] && ans="$default"
-  [[ "$ans" =~ ^[Yy] ]]
+  
+  # Set the variable for consistency with prompt()
+  if [[ "$ans" =~ ^[Yy] ]]; then
+    printf -v "$varname" "true"
+    return 0
+  else
+    printf -v "$varname" "false"
+    return 1
+  fi
 }
 
 # ── Prerequisites ─────────────────────────────────────────────────────────────
@@ -94,7 +117,7 @@ success "Docker and Docker Compose found."
 # ── Re-run guard ──────────────────────────────────────────────────────────────
 if [[ -f .env && -f config/config.json ]]; then
   warn "config/config.json and .env already exist."
-  if ! prompt_yn "Re-run setup and overwrite them?" "n"; then
+  if ! prompt_yn SKIP_RERUN_CONFIRM "Re-run setup and overwrite them?" "n"; then
     info "Nothing changed. To start: ${COMPOSE} up -d"
     exit 0
   fi
@@ -118,18 +141,18 @@ done
 header "Optional features"
 
 ENABLE_SEARCH=false
-if prompt_yn "Enable full-text search (Meilisearch)?" "y"; then
+if prompt_yn ENABLE_SEARCH "Enable full-text search (Meilisearch)?" "y"; then
   ENABLE_SEARCH=true
 fi
 
 ENABLE_VOICE=false
-if prompt_yn "Enable voice & video calls (LiveKit)?" "y"; then
+if prompt_yn ENABLE_VOICE "Enable voice & video calls (LiveKit)?" "y"; then
   ENABLE_VOICE=true
 fi
 
 ENABLE_EMAIL=false
 SMTP_HOST="" SMTP_PORT="587" SMTP_USER="" SMTP_PASS="" SMTP_FROM=""
-if prompt_yn "Enable email (for registration/password reset)?" "n"; then
+if prompt_yn ENABLE_EMAIL "Enable email (for registration/password reset)?" "n"; then
   ENABLE_EMAIL=true
   prompt SMTP_HOST "SMTP host"              "smtp.example.com"
   prompt SMTP_PORT "SMTP port"              "587"
